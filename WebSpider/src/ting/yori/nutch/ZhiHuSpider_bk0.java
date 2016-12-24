@@ -1,28 +1,53 @@
 package ting.yori.nutch;
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import ting.yori.http.HttpNutchUtil;
-import ting.yori.util.RegExpUtil;
 
-public class ZhiHuSpider {
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSession;
+
+/**
+ *第一个初始版本 
+ *
+ */
+public class ZhiHuSpider_bk0 {
 	
 	public static void main(String[] args) throws IOException {
 		final String urlPath = "https://www.zhihu.com/explore/recommendations";
-		String html = HttpNutchUtil.downloadStaticHTML(urlPath);
+		String html = downloadStaticHTML(urlPath);
+		//System.out.println(html);
+		/*String postPatternStr = "";
+		String quesPatternStr = "";
+		postPatternStr ="post-link.+?>(.+?)<";
+		quesPatternStr ="question_link.+?>(.+?)<"; 
+		List<String> postList = regexString(html, postPatternStr);
+		for(String s : postList){
+			System.out.println(s);
+		}
+		List<String> quesList = regexString(html, quesPatternStr);
+		for(String s : quesList){
+			System.out.println(s);
+		}*/
 		List<ZhiHu> lists = getZhihuQuesResults(html);
 		String finalResults = "";
 		for(ZhiHu entity : lists){
 			finalResults += entity.toString() +"\n";
 		}
 		File file = new File("D:\\myZhihuNutch.txt");
-		if(file.exists()){
+		if(!file.exists()){
 			file.createNewFile();
 		}
 		FileOutputStream out = new FileOutputStream(file);
@@ -32,6 +57,55 @@ public class ZhiHuSpider {
 		
 	}
 	
+	 //访问https时，进行跳过校验环节
+	final static HostnameVerifier DO_NOT_VERIFY = new HostnameVerifier() {
+        public boolean verify(String hostname, SSLSession session) {
+            return true;
+        }
+    };
+	
+	// 爬取网页的html页面
+	public static String downloadStaticHTML(String path){
+		URL readUrl;
+		HttpURLConnection conn;
+		HttpsURLConnection https;
+		String result = "";
+		BufferedReader br = null;
+		try {
+			
+			readUrl = new URL(path);
+		    https = (HttpsURLConnection)readUrl.openConnection();
+			if (readUrl.getProtocol().toLowerCase().equals("https")) {
+                https.setHostnameVerifier(DO_NOT_VERIFY);
+                conn = (HttpURLConnection) https;
+            } else {
+                conn = (HttpURLConnection)readUrl.openConnection();
+            }
+			//开启连接
+			conn = (HttpURLConnection) readUrl.openConnection();
+			
+			conn.connect();
+			 br = new BufferedReader(
+							new InputStreamReader(conn.getInputStream(),"utf-8"));
+			String line = "";
+			while((line = br.readLine()) != null){
+				result += line;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			return "";
+		} finally{
+			try {
+				if(br != null){
+					br.close();
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		result = result.replace("\\n","");
+		return result;
+	}
 	 //获取知乎问题内容
 	public static List<ZhiHu> getZhihuQuesResults(String html) {
 		  
@@ -68,19 +142,15 @@ public class ZhiHuSpider {
 				  questionUrl += urlMatcher.group(1); 
 				  zhihu.setQuestionUrl(questionUrl);
 				  //进入下一步内容的爬取，即问题答案的爬取
-				  String answerHtml = HttpNutchUtil.downloadStaticHTML(questionUrl);
+				  String answerHtml = downloadStaticHTML(questionUrl);
+				 
 				  //System.out.println(answerHtml);
 				  //定义一个知乎描述信息的匹配器description
 				  String quesPatternDesc = "/question/detail\">.+?>(.+?)</div";
-				 
-				  /*Pattern patternDesc = Pattern.compile(quesPatternDesc);
+				  Pattern patternDesc = Pattern.compile(quesPatternDesc);
 				  Matcher descMatcher = patternDesc.matcher(answerHtml);
 				  if(descMatcher.find()){
 					  zhihu.setDescription(descMatcher.group(1));
-				  }*/
-				  List<String> descMatchResults = RegExpUtil.getMatchResults(quesPatternDesc, answerHtml);
-				  if(descMatchResults.size() > 0){
-					  zhihu.setDescription(descMatchResults.get(0));
 				  }
 				  List<Topic> topics = new ArrayList<Topic>();
 				  //定义话题标签名称
@@ -111,44 +181,21 @@ public class ZhiHuSpider {
 				  String answerPersonSign= "author-link.+?title=\"(.+?)\" class";
 				  Pattern ansPersonSign = Pattern.compile(answerPersonSign);
 				  Matcher ansSignMatcher = ansPersonSign.matcher(answerHtml);
-				  
-				  //回答者个个人详细连接
-				  String personalUrl = "author-link\".+?href=\"(.+?)\"";
-				  Pattern personalUrlPattern = Pattern.compile(personalUrl);
-				  Matcher personalUrlMatcher = personalUrlPattern.matcher(answerHtml);
-				  
-				  //回答者头像地址
-				  String answerAvatarUrl = "<img src=\"(.+?)\"class=\"zm-list-avatar avatar";
-				  Pattern ansAvatarPattern = Pattern.compile(answerAvatarUrl);
-				  Matcher avatarMatcher = ansAvatarPattern.matcher(answerHtml);
-				  
-				  //点赞数
-				  String answerAgreement = "class=\"count\">(.+?)<";
-				  Pattern agreePattern = Pattern.compile(answerAgreement);
-				  Matcher agreeMatcher = agreePattern.matcher(answerHtml);
-				  
 				  //答案匹配
 				  String answerPatternStr = "<div class=\"zm-editable-content clearfix\">(.+?)</div>";
 				  Pattern ansPattern = Pattern.compile(answerPatternStr);
 				  Matcher ansMatcher = ansPattern.matcher(answerHtml);
 				  
-				  boolean ansFound = ansMatcher.find() && ansPersonMatcher.find() 
-						  		  && agreeMatcher.find() && ansSignMatcher.find()
-				  				  && avatarMatcher.find() && personalUrlMatcher.find();
+				  boolean ansFound = ansMatcher.find() && ansPersonMatcher.find() && ansSignMatcher.find();
 				  while(ansFound){
 					  Answer  eachAnswer = new Answer();
 					  eachAnswer.setAnswerResult(ansMatcher.group(1));
-					  eachAnswer.setCount(Integer.parseInt(agreeMatcher.group(1)));
 					  Person eachPerson = new Person();
 					  eachPerson.setName(ansPersonMatcher.group(1));
 					  eachPerson.setSign(ansSignMatcher.group(1));
-					  eachPerson.setAvatarUrl(avatarMatcher.group(1));
-					  eachPerson.setPersonalUrl(personalUrlMatcher.group(1));
 					  eachAnswer.setAnswerPerson(eachPerson);
 					  answerList.add(eachAnswer);
-					  ansFound = ansMatcher.find() && ansPersonMatcher.find() 
-							  && agreeMatcher.find() && ansSignMatcher.find()
-							  && avatarMatcher.find() && personalUrlMatcher.find();
+					  ansFound = ansMatcher.find() && ansPersonMatcher.find() && ansSignMatcher.find();
 				  }
 				  zhihu.setAnswers(answerList);
 			  }
@@ -158,18 +205,3 @@ public class ZhiHuSpider {
 		  return results;
 		 }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
